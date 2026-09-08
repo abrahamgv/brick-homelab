@@ -1,0 +1,62 @@
+# apps/longhorn/values.yaml
+#
+# Assumes each worker has a dedicated disk formatted and mounted at
+# /var/lib/longhorn-disks/disk0, and is labelled:
+#   node.longhorn.io/create-default-disk=config
+# with a matching node.longhorn.io/default-disks-config annotation.
+
+defaultSettings:
+  # Only nodes carrying the create-default-disk label contribute storage.
+  # Without this, Longhorn happily carves space out of every node's root disk.
+  createDefaultDiskLabeledNodes: true
+  defaultDataPath: /var/lib/longhorn-disks/disk0
+
+  # 3 workers, 3 replicas, hard anti-affinity: every replica on a different
+  # node, so losing one mini PC never loses a volume.
+  defaultReplicaCount: 3
+  replicaSoftAntiAffinity: false
+  replicaZoneSoftAntiAffinity: true
+
+  # Don't let thin provisioning write cheques the disks can't cash.
+  storageOverProvisioningPercentage: 100
+  storageMinimalAvailablePercentage: 15
+
+  # Keep one replica on the node running the workload where possible —
+  # noticeably better latency on a small cluster.
+  defaultDataLocality: best-effort
+
+  # Homelab reality: nodes get rebooted a lot. Give replicas time to come back
+  # before rebuilding them across the network.
+  replicaReplenishmentWaitInterval: 1800
+  nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+
+  orphanResourceAutoDeletion: "replica-data"
+  autoCleanupSystemGeneratedSnapshot: true
+
+  # Point at NFS or MinIO once you have somewhere to put backups. Replicas
+  # protect against a dead node; they do not protect against a bad kubectl.
+  # backupTarget: nfs://192.168.29.10:/volume1/longhorn-backup
+
+persistence:
+  defaultClass: true
+  defaultClassReplicaCount: 3
+  # Retain means a deleted PVC leaves the data behind. Slightly annoying to
+  # clean up, much better than discovering Delete was the default.
+  reclaimPolicy: Retain
+
+# Expose the UI via your own ingress/Gateway rather than the chart's, so auth
+# is handled in one place. The UI has no authentication of its own.
+ingress:
+  enabled: false
+
+longhornUI:
+  replicas: 1
+
+csi:
+  attacherReplicaCount: 2
+  provisionerReplicaCount: 2
+  resizerReplicaCount: 2
+  snapshotterReplicaCount: 2
+
+# Note: no csi.kubeletRootDir override needed. RKE2 uses the standard
+# /var/lib/kubelet — that setting is a k3s requirement, not an RKE2 one.
