@@ -1,51 +1,105 @@
 # apps/longhorn/values.yaml
 #
-# Assumes each worker has a dedicated disk formatted and mounted at
-# /var/lib/longhorn-disks/disk0, and is labelled:
-#   node.longhorn.io/create-default-disk=config
-# with a matching node.longhorn.io/default-disks-config annotation.
+# Cluster layout this is tuned for:
+#   pve1 -> w-1  (spare disk, storage node), cp-3
+#   pve2 -> w-2  (spare disk, storage node), cp-2
+#   pve3 -> cp-1 (spare disk, storage node)   <-- control plane doubling as storage
+#
+# Three storage nodes, one per physical host. cp-1 participates because pve3
+# has no RAM for a third worker. Its Longhorn disk MUST be the separate spare
+# disk, never the root disk that etcd lives on.
+#
+# Every storage node needs, set declaratively via RKE2 node-label:
+#   topology.kubernetes.io/zone=<pve host>
+#   node.longhorn.io/create-default-disk=true
+# and a disk formatted and mounted at /var/lib/longhorn-disks/disk0.
 
 defaultSettings:
   # Only nodes carrying the create-default-disk label contribute storage.
-  # Without this, Longhorn happily carves space out of every node's root disk.
+  # Without this, Longhorn carves space out of every node's root disk —
+  # which on cp-1 would mean sharing a spindle with etcd.
   createDefaultDiskLabeledNodes: true
   defaultDataPath: /var/lib/longhorn-disks/disk0
 
-  # 3 workers, 3 replicas, hard anti-affinity: every replica on a different
-  # node, so losing one mini PC never loses a volume.
+  # 3 replicas across 3 physical hosts. Node-level spread is NOT sufficient
+  # here: two VMs can share a Proxmox host and Longhorn cannot see that, so
+  # zone anti-affinity carries the real guarantee. Both hard — a volume goes
+  # Degraded rather than silently placing two replicas on one machine.
   defaultReplicaCount: 3
   replicaSoftAntiAffinity: false
-  replicaZoneSoftAntiAffinity: true
+  replicaZoneSoftAntiAffinity: false
 
-  # Don't let thin provisioning write cheques the disks can't cash.
-  storageOverProvisioningPercentage: 100
-  storageMinimalAvailablePercentage: 15
+  # --- etcd protection ------------------------------------------------------
+  # cp-1 runs etcd and a Longhorn replica. Steady-state replica traffic is
+  # light; rebuilds are the spike that can delay etcd heartbeats and trigger a
+  # leader election. Cap the concurrency so a rebuild stays a trickle.
+  concurrentReplicaRebuildPerNodeLimit: 1
+  concurrentVolumeBackupRestorePerNodeLimit: 1
+  concurrentAutomaticEngineUpgradePerNodeLimit: 1
+  guaranteedInstanceManagerCPU: 12
 
-  # Keep one replica on the node running the workload where possible —
-  # noticeably better latency on a small cluster.
-  defaultDataLocality: best-effort
-
-  # Homelab reality: nodes get rebooted a lot. Give replicas time to come back
-  # before rebuilding them across the network.
+  # With only 3 zones and no spare capacity, a dead host cannot be rebuilt
+  # around — there is nowhere to put the replica. Wait out reboots rather than
+  # thrashing the network trying to heal something that cannot heal.
   replicaReplenishmentWaitInterval: 1800
   nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+
+  # --- capacity -------------------------------------------------------------
+  # No thin provisioning past real capacity. A full Longhorn disk fails rather
+  # than degrades, and rebuilds need free space to work with.
+  storageOverProvisioningPercentage: 100
+  storageMinimalAvailablePercentage: 15
+  storageReservedPercentageForDefaultDisk: 10
+
+  # Keep a replica local to the workload where possible. Matters more here than
+  # usual: every write goes to all 3 replicas synchronously over gigabit.
+  defaultDataLocality: best-effort
 
   orphanResourceAutoDeletion: "replica-data"
   autoCleanupSystemGeneratedSnapshot: true
 
-  # Point at NFS or MinIO once you have somewhere to put backups. Replicas
-  # protect against a dead node; they do not protect against a bad kubectl.
+  # Instance-manager and engine-image pods are scheduled by longhorn-manager,
+  # not by a chart-templated spec, so they need tolerations declared here
+  # rather than in the longhornManager block below.
+  taintToleration: "node-role.kubernetes.io/control-plane=:NoSchedule;CriticalAddonsOnly=true:NoExecute"
+
+  # Configure this before putting anything you care about on the cluster.
+  # On 3 nodes with no spare capacity, replica count is a weaker guarantee than
+  # it looks, and it does nothing at all against a mistaken kubectl delete.
   # backupTarget: nfs://192.168.29.10:/volume1/longhorn-backup
+  # backupstorePollInterval: 300
 
 persistence:
   defaultClass: true
   defaultClassReplicaCount: 3
-  # Retain means a deleted PVC leaves the data behind. Slightly annoying to
-  # clean up, much better than discovering Delete was the default.
+  # Retain: a deleted PVC leaves the data behind. Mildly annoying to clean up,
+  # much better than discovering Delete was the default.
   reclaimPolicy: Retain
 
-# Expose the UI via your own ingress/Gateway rather than the chart's, so auth
-# is handled in one place. The UI has no authentication of its own.
+# Tolerations so Longhorn can run on cp-1. Harmless if your control planes are
+# untainted today (RKE2 leaves them schedulable by default) — but the moment
+# you add CriticalAddonsOnly as a hardening step, storage would silently stop
+# working on pve3 without these.
+longhornManager:
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: CriticalAddonsOnly
+      operator: Exists
+      effect: NoExecute
+
+longhornDriver:
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: CriticalAddonsOnly
+      operator: Exists
+      effect: NoExecute
+
+# Expose the UI through your own ingress/Gateway so auth lives in one place.
+# The Longhorn UI has no authentication of its own.
 ingress:
   enabled: false
 
@@ -58,5 +112,5 @@ csi:
   resizerReplicaCount: 2
   snapshotterReplicaCount: 2
 
-# Note: no csi.kubeletRootDir override needed. RKE2 uses the standard
-# /var/lib/kubelet — that setting is a k3s requirement, not an RKE2 one.
+# No csi.kubeletRootDir override needed — RKE2 uses the standard
+# /var/lib/kubelet. That setting is a k3s requirement, not an RKE2 one.
