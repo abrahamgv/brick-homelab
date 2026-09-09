@@ -1,0 +1,16 @@
+signoz:
+  name: "signoz"
+  replicaCount: 1
+  image:
+    registry: docker.io
+    repository: signoz/signoz
+    tag: v0.141.1
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+    internalPort: 8085
+    opampPort: 4320
+  additionalArgs:
+    - --use-logs-new-schema=true
+    - --use-trace-new-schema=true

@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: signoz
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.signoz.io
+      targetRevision: 0.116.2
+      chart: signoz
+      helm:
+        valueFiles:
+          - $values/infrastructure/signoz/values.yaml
+    - repoURL: https://github.com/abrahamgv/brick-homelab.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: signoz
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
