@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  annotations:
+    # Storage before anything that needs a PVC.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+
+  sources:
+    - repoURL: https://charts.longhorn.io
+      chart: longhorn
+      targetRevision: 1.12.1
+      helm:
+        valueFiles:
+          - $values/infrastructure/longhorn/values.yaml
+    - repoURL: https://github.com/abrahamgv/brick-homelab.git
+      targetRevision: main
+      ref: values
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: longhorn-system
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # Longhorn's CRDs are large enough to blow past the annotation size limit
+      # that client-side apply uses.
+      - ServerSideApply=true
+
+  # Longhorn's manager writes status and defaults back into its own resources,
+  # which ArgoCD would otherwise fight with forever under selfHeal.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /status
+        - /spec/preserveUnknownFields
+    - group: longhorn.io
+      kind: Setting
+      jsonPointers:
+        - /value

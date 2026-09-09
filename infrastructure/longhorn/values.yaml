@@ -14,6 +14,9 @@
 #   node.longhorn.io/create-default-disk=true
 # and a disk formatted and mounted at /var/lib/longhorn-disks/disk0.
 
+# First install need to disable first based on https://longhorn.io/docs/1.12.1/deploy/install/install-with-argocd/
+preUpgradeChecker:
+  jobEnabled: false
 defaultSettings:
   # Only nodes carrying the create-default-disk label contribute storage.
   # Without this, Longhorn carves space out of every node's root disk —
