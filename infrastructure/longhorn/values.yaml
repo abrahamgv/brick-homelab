@@ -1,9 +1,9 @@
 # apps/longhorn/values.yaml
 #
 # Cluster layout this is tuned for:
-#   pve1 -> w-1  (spare disk, storage node), cp-3
-#   pve2 -> w-2  (spare disk, storage node), cp-2
-#   pve3 -> cp-1 (spare disk, storage node)   <-- control plane doubling as storage
+#   pve A -> w-1  (spare disk, storage node), cp-3
+#   pve B -> w-2  (spare disk, storage node), cp-2
+#   pve C -> cp-1 (spare disk, storage node)   <-- control plane doubling as storage
 #
 # Three storage nodes, one per physical host. cp-1 participates because pve3
 # has no RAM for a third worker. Its Longhorn disk MUST be the separate spare
@@ -36,7 +36,7 @@ defaultSettings:
   concurrentReplicaRebuildPerNodeLimit: 1
   concurrentVolumeBackupRestorePerNodeLimit: 1
   concurrentAutomaticEngineUpgradePerNodeLimit: 1
-  guaranteedInstanceManagerCPU: 12
+  guaranteedInstanceManagerCPU: 12 # this unit is in percentage
 
   # With only 3 zones and no spare capacity, a dead host cannot be rebuilt
   # around — there is nowhere to put the replica. Wait out reboots rather than
