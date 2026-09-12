@@ -1,0 +1,11 @@
+global:
+  cloud: others
+  clusterName: default
+  deploymentEnvironment: staging
+otelCollectorEndpoint: http://signoz-otel-collector.signoz:4318
+otelInsecure: true
+presets:
+  otlphttpExporter:
+    enabled: true
+  loggingExporter:
+    enabled: false

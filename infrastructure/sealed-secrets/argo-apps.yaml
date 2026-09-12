@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sealed-secrets
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://bitnami.github.io/sealed-secrets
+    chart: sealed-secrets
+    targetRevision: 2.20.0
+    helm:
+# from https://github.com/bitnami/sealed-secrets#helm-chart
+#  NOTE: The helm chart by default installs the controller with the name sealed-secrets, 
+# while the kubeseal command line interface (CLI) tries to access the controller with the name sealed-secrets-controller.
+# You can explicitly pass --controller-name to the CLI:
+# > kubeseal --controller-name sealed-secrets <args>
+# Alternatively, you can set fullnameOverride when installing the chart to override the name.
+# Note also that kubeseal assumes that the controller is installed within the kube-system namespace by default.
+# So if you want to use the kubeseal CLI without having to pass the expected controller name and namespace you should install the Helm Chart like this:
+# > helm install sealed-secrets -n kube-system --set-string fullnameOverride=sealed-secrets-controller sealed-secrets/sealed-secrets
+      values: |
+        fullnameOverride: "sealed-secrets-controller"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

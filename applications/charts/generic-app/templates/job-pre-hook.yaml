@@ -1,0 +1,4 @@
+{{- range .Values.preHookJobs }}
+---
+{{ include "generic-app.hookJob" (dict "root" $ "job" . "hook" "pre-install,pre-upgrade" "component" "pre-hook") }}
+{{- end }}

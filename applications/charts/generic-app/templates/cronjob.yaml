@@ -1,0 +1,40 @@
+{{- range .Values.cronjobs }}
+{{- if not .command }}{{ fail (printf "cronjob %q: command is required" .name) }}{{ end }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "generic-app.fullname" $ }}-{{ .name }}
+  labels:
+    {{- include "generic-app.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: cronjob
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  schedule: {{ required (printf "cronjob %q: schedule is required" .name) .schedule | quote }}
+  {{- with .timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  concurrencyPolicy: {{ .concurrencyPolicy | default "Forbid" }}
+  suspend: {{ .suspend | default false }}
+  {{- with .startingDeadlineSeconds }}
+  startingDeadlineSeconds: {{ . }}
+  {{- end }}
+  successfulJobsHistoryLimit: {{ .successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .failedJobsHistoryLimit | default 1 }}
+  jobTemplate:
+    spec:
+      {{- with (include "generic-app.jobSpecFields" (dict "root" $ "job" .) | trim) }}{{ . | nindent 6 }}{{- end }}
+      template:
+        metadata:
+          labels:
+            {{- include "generic-app.jobPodLabels" (dict "root" $ "job" . "component" "cronjob") | nindent 12 }}
+          {{- with .podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          {{- with (include "generic-app.jobPodSpec" (dict "root" $ "job" .) | trim) }}{{ . | nindent 10 }}{{- end }}
+{{- end }}
